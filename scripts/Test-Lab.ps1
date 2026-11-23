@@ -3,8 +3,9 @@
     Проверяет работоспособность учебной лаборатории: домен, DNS, DHCP и группы.
 
 .DESCRIPTION
-    Выполняет пять проверок: доступность домена Active Directory, наличие зоны DNS,
-    разрешение имени контроллера домена, активность DHCP-scope и состав группы IT-Admins.
+    Выполняет шесть проверок: доступность домена Active Directory, наличие зоны DNS,
+    разрешение имени контроллера домена, активность DHCP-scope, авторизацию DHCP-сервера
+    в Active Directory и состав группы IT-Admins.
     Каждая проверка выполняется изолированно: ошибка одной не мешает остальным,
     а причина попадает в колонку «Детали».
     Результат выводится таблицей. Если хотя бы одна проверка не пройдена,
@@ -168,7 +169,54 @@ catch {
     }
 }
 
-# 5. В группе IT-Admins есть участники
+# 5. DHCP авторизован в AD
+try {
+    $serverIp = $null
+
+    foreach ($binding in @(Get-DhcpServerv4Binding -ErrorAction Stop)) {
+        if (-not [string]::IsNullOrEmpty($binding.IPAddress)) {
+            $serverIp = [string]$binding.IPAddress
+            break
+        }
+    }
+
+    if ($null -eq $serverIp) {
+        throw 'у DHCP-сервера нет привязки к IPv4-адресу'
+    }
+
+    $isAuthorized = $false
+
+    foreach ($authorizedServer in @(Get-DhcpServerInDC -ErrorAction Stop)) {
+        if ([string]$authorizedServer.IPAddress -eq $serverIp) {
+            $isAuthorized = $true
+            break
+        }
+    }
+
+    if ($isAuthorized) {
+        $results += [pscustomobject]@{
+            Проверка = 'DHCP авторизован в AD'
+            Статус   = 'OK'
+            Детали   = ('Авторизован: ' + $serverIp)
+        }
+    }
+    else {
+        $results += [pscustomobject]@{
+            Проверка = 'DHCP авторизован в AD'
+            Статус   = 'FAIL'
+            Детали   = ('Сервер ' + $serverIp + ' отсутствует в списке авторизованных: DHCP не авторизован в AD')
+        }
+    }
+}
+catch {
+    $results += [pscustomobject]@{
+        Проверка = 'DHCP авторизован в AD'
+        Статус   = 'FAIL'
+        Детали   = ('Не удалось проверить авторизацию DHCP: ' + (Get-OneLineCause -Message $_.Exception.Message))
+    }
+}
+
+# 6. В группе IT-Admins есть участники
 try {
     $memberCount = @(Get-ADGroupMember -Identity 'IT-Admins' -ErrorAction Stop).Count
 

@@ -37,6 +37,21 @@ if (-not (Get-Module -ListAvailable -Name 'ActiveDirectory')) {
     exit 1
 }
 
+# 2. Домен
+$domain = $null
+try {
+    $domain = Get-ADDomain -Identity $DomainDN -ErrorAction Stop
+}
+catch {
+    $domain = $null
+}
+
+if ($null -eq $domain) {
+    $ErrorActionPreference = 'Continue'
+    Write-Error "Домен $DomainDN не найден."
+    exit 1
+}
+
 function Get-OuDN {
     param(
         [Parameter(Mandatory = $true)]

@@ -128,7 +128,7 @@ try {
         }
         else {
             try {
-                Add-DhcpServerInDC -DnsName $env:COMPUTERNAME -IPAddress $DnsServer -ErrorAction Stop
+                Add-DhcpServerInDC -DnsName "$env:COMPUTERNAME.$Domain" -IPAddress $DnsServer -ErrorAction Stop
                 Write-Verbose 'DHCP-сервер авторизован в Active Directory.'
             }
             catch {

@@ -129,6 +129,11 @@ foreach ($labOu in $labOus) {
     }
 }
 
+# Пароль спрашиваем до создания групп: Ctrl+C на запросе не оставит групп без пользователей
+if (-not $WhatIfPreference -and $null -eq $DefaultPassword) {
+    $DefaultPassword = Read-Host -AsSecureString "Пароль для новых учётных записей"
+}
+
 try {
     # 4. Группы
     foreach ($groupName in $groupNames) {
@@ -151,10 +156,6 @@ try {
             $groupsCreated++
             Write-Verbose "Создана группа: $groupName"
         }
-    }
-
-    if (-not $WhatIfPreference -and $null -eq $DefaultPassword) {
-        $DefaultPassword = Read-Host -AsSecureString "Пароль для новых учётных записей"
     }
 
     # 5. Пользователи и 6. членство в группах
