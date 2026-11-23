@@ -29,7 +29,6 @@
 
     Проверяет другой домен, другой контроллер домена и другой scope.
 #>
-#Requires -RunAsAdministrator
 param(
     [Parameter()]
     [string]$DomainDN = 'DC=lab,DC=local',
@@ -63,6 +62,17 @@ if ($missingModules.Count -gt 0) {
 # DNS-имя домена для проверки зоны: DC=lab,DC=local -> lab.local
 $dnsDomainName = (($DomainDN -split ',') | ForEach-Object { ($_.Trim() -replace '^[Dd][Cc]=', '') }) -join '.'
 
+# Причина сбоя — одной строкой, чтобы таблица не расползалась
+function Get-OneLineCause {
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Message
+    )
+
+    return ($Message -replace '\s+', ' ').Trim()
+}
+
 $results = @()
 
 # 1. Домен доступен
@@ -78,7 +88,7 @@ catch {
     $results += [pscustomobject]@{
         Проверка = 'Домен доступен'
         Статус   = 'FAIL'
-        Детали   = $_.Exception.Message
+        Детали   = ('Домен ' + $DomainDN + ' недоступен: ' + (Get-OneLineCause -Message $_.Exception.Message))
     }
 }
 
@@ -95,7 +105,7 @@ catch {
     $results += [pscustomobject]@{
         Проверка = 'Зона DNS есть'
         Статус   = 'FAIL'
-        Детали   = $_.Exception.Message
+        Детали   = ('Зона ' + $dnsDomainName + ' не найдена на DNS-сервере: ' + (Get-OneLineCause -Message $_.Exception.Message))
     }
 }
 
@@ -114,7 +124,7 @@ try {
     }
 
     if ($null -eq $firstIp) {
-        throw ('Для ' + $DcName + ' нет A-записи')
+        throw 'A-запись не найдена'
     }
 
     $results += [pscustomobject]@{
@@ -127,7 +137,7 @@ catch {
     $results += [pscustomobject]@{
         Проверка = 'Имя DC резолвится'
         Статус   = 'FAIL'
-        Детали   = $_.Exception.Message
+        Детали   = ('Имя ' + $DcName + ' не разрешается через DNS: ' + (Get-OneLineCause -Message $_.Exception.Message))
     }
 }
 
@@ -154,7 +164,7 @@ catch {
     $results += [pscustomobject]@{
         Проверка = 'Scope активен'
         Статус   = 'FAIL'
-        Детали   = $_.Exception.Message
+        Детали   = ('Scope ' + $ScopeId + ' не найден или DHCP недоступен: ' + (Get-OneLineCause -Message $_.Exception.Message))
     }
 }
 
@@ -179,17 +189,18 @@ catch {
     $results += [pscustomobject]@{
         Проверка = 'В группе IT-Admins есть участники'
         Статус   = 'FAIL'
-        Детали   = $_.Exception.Message
+        Детали   = ('Группа IT-Admins недоступна: ' + (Get-OneLineCause -Message $_.Exception.Message))
     }
 }
 
 $results | Format-Table -AutoSize
 
+$total = $results.Count
 $passed = @($results | Where-Object { $_.'Статус' -eq 'OK' }).Count
 
-Write-Host ("Итог: {0} из 5 проверок пройдено" -f $passed)
+Write-Output ("Итог: {0} из {1} проверок пройдено" -f $passed, $total)
 
-if ($passed -lt 5) {
+if ($passed -lt $total) {
     exit 1
 }
 
