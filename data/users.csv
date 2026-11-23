@@ -1,0 +1,9 @@
+﻿SamAccountName,GivenName,Surname,Department,Title,Groups,OU
+i.petrov,Иван,Петров,IT,Системный администратор,IT-Admins;VPN-Users,"OU=IT,OU=Users,OU=Lab"
+a.sidorova,Анна,Сидорова,IT,Инженер технической поддержки,IT-Admins;IT-Helpdesk,"OU=IT,OU=Users,OU=Lab"
+m.kozlova,Мария,Козлова,Finance,Бухгалтер,Finance-Users,"OU=Finance,OU=Users,OU=Lab"
+s.volkov,Сергей,Волков,Finance,Финансовый аналитик,Finance-Users;VPN-Users,"OU=Finance,OU=Users,OU=Lab"
+o.morozova,Ольга,Морозова,Sales,Менеджер по продажам,Sales-Users,"OU=Sales,OU=Users,OU=Lab"
+d.lebedev,Дмитрий,Лебедев,Sales,Руководитель отдела продаж,Sales-Users;VPN-Users,"OU=Sales,OU=Users,OU=Lab"
+e.novikova,Елена,Новикова,Support,Специалист техподдержки,Support-Users;IT-Helpdesk,"OU=Support,OU=Users,OU=Lab"
+p.orlov,Павел,Орлов,Support,Старший специалист поддержки,,"OU=Support,OU=Users,OU=Lab"
