@@ -12,6 +12,8 @@
 
 **Требования.** PowerShell 5.1, консоль администратора, VMware Workstation, две виртуальные машины. Интернет стенду не нужен.
 
+Пошаговая сборка с нуля, вместе с ошибками, которые возникают чаще всего, — в отдельном файле: [`docs/GUIDE.md`](docs/GUIDE.md).
+
 ## Схема стенда
 
 ```mermaid
@@ -35,13 +37,17 @@ flowchart LR
 
 ## Шаги
 
+Краткая версия ниже; расширенная, с разбором сбоев на каждом шаге, — в [`docs/GUIDE.md`](docs/GUIDE.md).
+
 ### 1. Установка Windows Server
 
 ```text
 VMware Workstation → New Virtual Machine → Typical
   Installer disc image file (ISO): образ Windows Server 2022 Standard
   Virtual machine name: DC01
-  Disk size: 40 GB
+  Disk size: 60 GB
+  Memory: 4096 MB
+  Processors: 2
   Customize Hardware → Network Adapter → Custom (VMnet1)
 Установка: редакция с «Desktop Experience»
 ```
