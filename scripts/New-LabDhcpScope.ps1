@@ -107,12 +107,35 @@ try {
     # 4. Авторизация DHCP-сервера в AD: повторный запуск не является ошибкой
     if ($PSCmdlet.ShouldProcess($env:COMPUTERNAME, 'Авторизовать DHCP-сервер в AD')) {
         try {
-            Add-DhcpServerInDC -DnsName $env:COMPUTERNAME -IPAddress $DnsServer -ErrorAction Stop
-            Write-Verbose 'DHCP-сервер авторизован в Active Directory.'
+            $authorizedServers = @(Get-DhcpServerInDC -ErrorAction Stop)
         }
         catch {
-            Write-Verbose ('Авторизация: ' + $_.Exception.Message)
-            Write-Host "DHCP-сервер $env:COMPUTERNAME уже авторизован в Active Directory."
+            $ErrorActionPreference = 'Continue'
+            Write-Error ('Не удалось получить список авторизованных DHCP-серверов: ' + $_.Exception.Message)
+            exit 1
+        }
+
+        $isAuthorized = $false
+        foreach ($authorizedServer in $authorizedServers) {
+            if ([string]$authorizedServer.IPAddress -eq [string]$DnsServer) {
+                $isAuthorized = $true
+                break
+            }
+        }
+
+        if ($isAuthorized) {
+            Write-Host 'DHCP-сервер уже авторизован в Active Directory.'
+        }
+        else {
+            try {
+                Add-DhcpServerInDC -DnsName $env:COMPUTERNAME -IPAddress $DnsServer -ErrorAction Stop
+                Write-Verbose 'DHCP-сервер авторизован в Active Directory.'
+            }
+            catch {
+                $ErrorActionPreference = 'Continue'
+                Write-Error ('Не удалось авторизовать DHCP-сервер в Active Directory: ' + $_.Exception.Message)
+                exit 1
+            }
         }
     }
 }
