@@ -17,6 +17,7 @@
 
 .PARAMETER DefaultPassword
     Пароль для новых учётных записей. Если не задан, запрашивается интерактивно.
+    При запуске с -WhatIf пароль не запрашивается.
 
 .EXAMPLE
     .\New-LabUsers.ps1
@@ -27,6 +28,7 @@
     .\New-LabUsers.ps1 -CsvPath '.\data\users.csv' -WhatIf
 
     Показывает, какие пользователи были бы созданы, ничего не меняя.
+    Пароль при этом не запрашивается.
 #>
 #Requires -RunAsAdministrator
 [CmdletBinding(SupportsShouldProcess = $true)]
@@ -102,10 +104,30 @@ foreach ($requiredColumn in $requiredColumns) {
 
 $groupNames = @('IT-Admins', 'IT-Helpdesk', 'Finance-Users', 'Sales-Users', 'Support-Users', 'VPN-Users')
 $groupsOuDn = 'OU=Groups,OU=Lab,' + $DomainDN
+$groupsOuSuffix = ',' + $groupsOuDn
 
 $created = 0
 $skipped = 0
 $groupsCreated = 0
+
+# 4a. Подразделения из CSV должны существовать — проверяем до любых изменений
+$labOus = @($csvData | ForEach-Object { $_.OU.Trim() + ',' + $DomainDN } | Sort-Object -Unique)
+
+foreach ($labOu in $labOus) {
+    $existingOu = $null
+    try {
+        $existingOu = Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$labOu'" -ErrorAction Stop
+    }
+    catch {
+        $existingOu = $null
+    }
+
+    if ($null -eq $existingOu) {
+        $ErrorActionPreference = 'Continue'
+        Write-Error "Подразделение не найдено: $labOu. Сначала выполните .\New-LabOUs.ps1."
+        exit 1
+    }
+}
 
 try {
     # 4. Группы
@@ -113,6 +135,13 @@ try {
         $existingGroup = Get-ADGroup -Filter "SamAccountName -eq '$groupName'" -ErrorAction SilentlyContinue
 
         if ($null -ne $existingGroup) {
+            $existingGroupDn = $existingGroup.DistinguishedName
+            if (-not $existingGroupDn.EndsWith($groupsOuSuffix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $ErrorActionPreference = 'Continue'
+                Write-Error "Группа $groupName уже существует вне $groupsOuDn ($existingGroupDn)."
+                exit 1
+            }
+
             Write-Verbose "Группа уже существует: $groupName"
             continue
         }
@@ -124,7 +153,7 @@ try {
         }
     }
 
-    if ($null -eq $DefaultPassword) {
+    if (-not $WhatIfPreference -and $null -eq $DefaultPassword) {
         $DefaultPassword = Read-Host -AsSecureString "Пароль для новых учётных записей"
     }
 
@@ -219,6 +248,13 @@ try {
                 exit 1
             }
 
+            $groupDn = $group.DistinguishedName
+            if (-not $groupDn.EndsWith($groupsOuSuffix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $ErrorActionPreference = 'Continue'
+                Write-Error "Группа $groupName находится вне $groupsOuDn ($groupDn): членство не добавлено."
+                exit 1
+            }
+
             $members = @()
             if ($null -ne $group.PSObject.Properties['Members']) {
                 $members = @($group.Members)
@@ -230,7 +266,7 @@ try {
             }
 
             if ($PSCmdlet.ShouldProcess($sam, "Добавить в группу $groupName")) {
-                Add-ADGroupMember -Identity $groupName -Members $sam
+                Add-ADGroupMember -Identity $groupDn -Members $sam
                 Write-Verbose "Пользователь $sam добавлен в группу $groupName"
             }
         }

@@ -30,6 +30,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# 1. Модуль ActiveDirectory
+if (-not (Get-Module -ListAvailable -Name 'ActiveDirectory')) {
+    $ErrorActionPreference = 'Continue'
+    Write-Error 'Нужен модуль ActiveDirectory: запускайте на контроллере домена или с RSAT.'
+    exit 1
+}
+
 function Get-OuDN {
     param(
         [Parameter(Mandatory = $true)]
