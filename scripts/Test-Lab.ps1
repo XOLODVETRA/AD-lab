@@ -172,12 +172,19 @@ catch {
 # 5. DHCP авторизован в AD
 try {
     $serverIp = $null
+    $scopePrefix = (($ScopeId -split '\.')[0..2] -join '.')
 
-    foreach ($binding in @(Get-DhcpServerv4Binding -ErrorAction Stop)) {
-        if (-not [string]::IsNullOrEmpty($binding.IPAddress)) {
-            $serverIp = [string]$binding.IPAddress
-            break
-        }
+    $bindings = @(@(Get-DhcpServerv4Binding -ErrorAction Stop) |
+        Where-Object { -not [string]::IsNullOrEmpty($_.IPAddress) })
+
+    $inScope = @($bindings |
+        Where-Object { ([string]$_.IPAddress).StartsWith($scopePrefix + '.') })
+
+    if ($inScope.Count -gt 0) {
+        $serverIp = [string]$inScope[0].IPAddress
+    }
+    elseif ($bindings.Count -gt 0) {
+        $serverIp = [string]$bindings[0].IPAddress
     }
 
     if ($null -eq $serverIp) {
