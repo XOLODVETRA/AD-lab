@@ -8,7 +8,7 @@
 
 Стенд собран, чтобы отработать на практике то, с чем сталкивается junior-системный администратор: развёртывание контроллера домена, прямую и обратную зоны DNS, DHCP-scope с авторизацией в AD, структуру подразделений и групп, массовое создание пользователей из CSV.
 
-Установка Windows Server, настройка сети, установка ролей и повышение сервера до контроллера домена делаются вручную — это шаги 1–5 ниже. Скрипты из `scripts\` запускаются уже в готовом домене: создают OU, группы и пользователей, настраивают DHCP-scope и проверяют, что стенд работает.
+Установка Windows Server, настройка сети, установка ролей и повышение сервера до контроллера домена делаются вручную — это шаги 1–6 ниже. Скрипты из `scripts\` запускаются уже в готовом домене: создают OU, группы и пользователей, настраивают DHCP-scope и проверяют, что стенд работает.
 
 ## Схема стенда
 
@@ -53,13 +53,14 @@ VMware Workstation → New Virtual Machine → Typical
 ```powershell
 Get-NetAdapter                                                          # имя адаптера может отличаться; ниже — Ethernet0
 New-NetIPAddress -InterfaceAlias 'Ethernet0' -IPAddress '192.168.10.10' -PrefixLength 24
+Set-NetIPInterface -InterfaceAlias 'Ethernet0' -Dhcp Disabled
 Set-DnsClientServerAddress -InterfaceAlias 'Ethernet0' -ServerAddresses '192.168.10.10'
 Rename-Computer -NewName 'DC01' -Restart
 ```
 
-**Что делает.** Задаёт контроллеру домена постоянный адрес `192.168.10.10/24` без шлюза (в host-only сети шлюза нет), указывает ему в качестве DNS-сервера самого себя и переименовывает машину в DC01. Внешний DNS на сетевом адаптере контроллера указывать нельзя: иначе DC не зарегистрирует свои записи в собственной зоне.
+**Что делает.** Задаёт контроллеру домена постоянный адрес `192.168.10.10/24` без шлюза (в host-only сети шлюза нет), отключает DHCP на адаптере, указывает в качестве DNS-сервера самого себя и переименовывает машину в DC01. Внешний DNS на сетевом адаптере контроллера указывать нельзя: иначе DC не зарегистрирует свои записи в собственной зоне. В Virtual Network Editor отключите DHCP для VMnet1: иначе клиенты могут получить адрес не из `192.168.10.0/24`.
 
-**Как проверить.** `Get-NetIPAddress -InterfaceAlias 'Ethernet0' -AddressFamily IPv4 | Select-Object IPAddress, PrefixLength, PrefixOrigin` — адрес `192.168.10.10`, `PrefixOrigin` = Manual; `Get-DnsClientServerAddress -InterfaceAlias 'Ethernet0'` — сервер `192.168.10.10`; `hostname` — `DC01`.
+**Как проверить.** `Get-NetIPAddress -InterfaceAlias 'Ethernet0' -AddressFamily IPv4 | Select-Object IPAddress, PrefixLength, PrefixOrigin` — адрес `192.168.10.10`, `PrefixOrigin` = Manual; `Get-NetIPInterface -InterfaceAlias 'Ethernet0' -AddressFamily IPv4` — `Dhcp` = `Disabled`; `Get-DnsClientServerAddress -InterfaceAlias 'Ethernet0'` — сервер `192.168.10.10`; `hostname` — `DC01`.
 
 ### 3. Роль AD DS
 
@@ -77,9 +78,9 @@ Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools
 Install-ADDSForest -DomainName 'lab.local' -DomainNetbiosName 'LAB' -InstallDns -Force:$true
 ```
 
-**Что делает.** Создаёт новый лес и домен `lab.local`, повышает DC01 до контроллера домена, устанавливает DNS и перезагружает сервер. Мастер запросит пароль режима восстановления служб каталогов (DSRM). С этого момента домен существует, и можно запускать скрипты из `scripts\`.
+**Что делает.** Создаёт новый лес и домен `lab.local`, повышает DC01 до контроллера домена, устанавливает DNS и перезагружает сервер. Мастер запросит пароль режима восстановления служб каталогов (DSRM). С этого момента домен существует: можно запускать `New-LabOUs.ps1` и `New-LabUsers.ps1`; для DHCP-scope и проверки стенда сначала понадобится роль DHCP из шага 6.
 
-**Как проверить.** После перезагрузки, под доменной учётной записью: `Get-ADDomain | Select-Object DNSRoot, NetBIOSName` — `lab.local` и `LAB`; `Get-Service NTDS, DNS, Netlogon | Select-Object Name, Status` — все три службы `Running`.
+**Как проверить.** После перезагрузки, под учётной записью `LAB\Administrator` (пароль задан при повышении): `Get-ADDomain | Select-Object DNSRoot, NetBIOSName` — `lab.local` и `LAB`; `Get-Service NTDS, DNS, Netlogon | Select-Object Name, Status` — все три службы `Running`.
 
 ### 5. DNS
 
@@ -105,18 +106,18 @@ Add-DhcpServerInDC -DnsName 'DC01.lab.local' -IPAddress '192.168.10.10'
 Restart-Service DHCPServer
 ```
 
-**Что делает.** Устанавливает роль DHCP, создаёт и сразу активирует scope `192.168.10.0/24` с диапазоном `192.168.10.100–150`, задаёт опции 003 (маршрутизатор), 006 (DNS-сервер `192.168.10.10`) и 015 (доменное имя `lab.local`), затем авторизует DHCP-сервер в Active Directory — без авторизации в домене служба адреса не выдаёт. Опция 003 указывает на `192.168.10.1`: такого шлюза в host-only сети нет, и для работы домена он не нужен, потому что весь трафик идёт внутри подсети.
+**Что делает.** Устанавливает роль DHCP, создаёт и сразу активирует scope `192.168.10.0/24` с диапазоном `192.168.10.100–150`, задаёт опции 003 (маршрутизатор), 006 (DNS-сервер `192.168.10.10`) и 015 (доменное имя `lab.local`), затем авторизует DHCP-сервер в Active Directory — без авторизации в домене служба адреса не выдаёт. Опция 003 отдаёт клиентам шлюз `192.168.10.1`, хотя в host-only сети такого шлюза нет: в `ipconfig /all` он будет показан как основной шлюз и будет недоступен. В этом стенде так и задумано, домену это не мешает — весь трафик идёт внутри подсети.
 
-**Как проверить.** `Get-DhcpServerInDC` — в списке `DC01.lab.local` / `192.168.10.10`; `Get-DhcpServerv4Scope` — `State` = `Active`. На клиенте: `ipconfig /release`, `ipconfig /renew`, `ipconfig /all` — адрес из диапазона, DNS-сервер `192.168.10.10`, DNS-суффикс `lab.local`. Затем вход в домен из PowerShell от имени администратора: `Add-Computer -DomainName 'lab.local' -Credential (Get-Credential)` с учётной записью доменного администратора, перезагрузка и вход как `LAB\i.petrov` (учётные записи из CSV создаются с требованием сменить пароль при первом входе).
+**Как проверить.** `Get-DhcpServerInDC` — в списке `DC01.lab.local` / `192.168.10.10`; `Get-DhcpServerv4Scope` — `State` = `Active`. На клиенте: `ipconfig /release`, `ipconfig /renew`, `ipconfig /all` — адрес из диапазона, DNS-сервер `192.168.10.10`, DNS-суффикс `lab.local`, шлюз `192.168.10.1` (недоступен — так и задумано). Затем вход в домен из PowerShell от имени администратора: `Add-Computer -DomainName 'lab.local' -Credential (Get-Credential)` с учётной записью доменного администратора, перезагрузка и вход как `LAB\i.petrov` (учётные записи из CSV создаются с требованием сменить пароль при первом входе).
 
 ## Скрипты
 
-Все четыре скрипта запускаются на DC01 в PowerShell от имени администратора, после того как домен создан (шаги 1–5). Параметры у них необязательные, значения по умолчанию совпадают с этим стендом.
+Все четыре скрипта запускаются на DC01 в PowerShell от имени администратора. `New-LabOUs.ps1` и `New-LabUsers.ps1` работают в готовом домене, то есть после шага 5; `New-LabDhcpScope.ps1` и `Test-Lab.ps1` — после шага 6, когда установлена роль DHCP: без модуля `DhcpServer` они завершатся ошибкой. Параметры у них необязательные, значения по умолчанию совпадают с этим стендом.
 
 | Скрипт | Что делает | Пример запуска |
 | --- | --- | --- |
 | `scripts\New-LabOUs.ps1` | Создаёт 10 подразделений: `Lab`, `Lab\Users` с отделами IT, Finance, Sales, Support, `Lab\Groups`, `Lab\Computers` с `Servers` и `Workstations`. Существующие OU пропускает. | `.\scripts\New-LabOUs.ps1` |
-| `scripts\New-LabUsers.ps1` | Создаёт 6 групп (`IT-Admins`, `IT-Helpdesk`, `Finance-Users`, `Sales-Users`, `Support-Users`, `VPN-Users`) и 8 пользователей из CSV, добавляет их в группы. Пароль спрашивает интерактивно, если не передан `-DefaultPassword`. | `.\scripts\New-LabUsers.ps1 -CsvPath '.\data\users.csv'` |
+| `scripts\New-LabUsers.ps1` | Создаёт 6 групп (`IT-Admins`, `IT-Helpdesk`, `Finance-Users`, `Sales-Users`, `Support-Users`, `VPN-Users`) и 8 пользователей из CSV, добавляет их в группы. Пароль спрашивает интерактивно, если не передан `-DefaultPassword` (SecureString, например `-DefaultPassword (Read-Host -AsSecureString)`). | `.\scripts\New-LabUsers.ps1 -CsvPath '.\data\users.csv'` |
 | `scripts\New-LabDhcpScope.ps1` | Создаёт или обновляет scope `192.168.10.0` с диапазоном `192.168.10.100–150`, настраивает опции 003, 006, 015 и авторизует DHCP-сервер в AD. | `.\scripts\New-LabDhcpScope.ps1 -ScopeId '192.168.10.0' -StartRange '192.168.10.100' -EndRange '192.168.10.150' -DnsServer '192.168.10.10' -Domain 'lab.local'` |
 | `scripts\Test-Lab.ps1` | Выполняет 5 проверок: домен доступен, зона DNS есть, имя DC резолвится, scope активен, в группе `IT-Admins` есть участники. При неудаче завершается с кодом 1. | `.\scripts\Test-Lab.ps1 -DomainDN 'DC=lab,DC=local' -DcName 'DC01' -ScopeId '192.168.10.0'` |
 
@@ -171,9 +172,9 @@ Scope активен                      OK     Scope 192.168.10.0: Active
    Причина: Kerberos допускает расхождение не больше 5 минут; время на DC ушло вперёд или назад.
    Что сделать: на DC проверить `w32tm /query /status` и синхронизировать — `w32tm /resync` (при наличии интернета) либо выставить время вручную; затем `w32tm /resync` на клиенте и повторный вход.
 
-6. **`New-LabUsers.ps1` падает с «Подразделение не найдено».** Симптом: скрипт останавливается на `OU=IT,OU=Users,OU=Lab,...` и ничего не создаёт.
-   Причина: `New-LabOUs.ps1` ещё не выполнялся либо скрипты запущены с разными значениями `-DomainDN`.
-   Что сделать: сначала `.\scripts\New-LabOUs.ps1`, затем `New-LabUsers.ps1` с тем же `-DomainDN` (по умолчанию `DC=lab,DC=local`).
+6. **`New-LabUsers.ps1` падает с «Подразделение не найдено».** Симптом: до любых изменений скрипт останавливается на первом отсутствующем подразделении и называет его DN.
+   Причина: дерево OU построено не полностью — `New-LabOUs.ps1` не выполнялся или выполнился частично, либо скрипты запущены с разными значениями `-DomainDN`.
+   Что сделать: сначала `.\scripts\New-LabOUs.ps1` (он создаст недостающие OU), затем `New-LabUsers.ps1` с тем же `-DomainDN` (по умолчанию `DC=lab,DC=local`).
 
 ---
 *Лаборатория собрана в 2026 году. Скриншоты — из личного стенда.*
